@@ -42,16 +42,21 @@ html, body, [data-testid="stAppViewContainer"] {
     max-width: 680px !important;
 }
 
-/* Karty Frosted Glass */
-.glass-panel {
-    background: var(--glass-bg);
-    backdrop-filter: blur(18px) saturate(150%);
-    -webkit-backdrop-filter: blur(18px) saturate(150%);
-    border: 1px solid var(--glass-border);
-    border-radius: 18px;
-    box-shadow: var(--glass-shadow);
-    padding: 1.1rem 1.2rem;
-    margin-bottom: 1rem;
+/* Stylizowany kontener wpisu w dzienniku (st.container(border=True)) */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: rgba(26, 36, 28, 0.65) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 16px !important;
+    padding: 0.85rem 1rem !important;
+    margin-bottom: 0.85rem !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3) !important;
+    transition: border-color 0.2s ease !important;
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    border-color: rgba(143, 151, 121, 0.35) !important;
 }
 
 /* Nagłówek aplikacji */
@@ -140,34 +145,7 @@ html, body, [data-testid="stAppViewContainer"] {
     margin-top: 2px;
 }
 
-/* Karta wpisu dziennego */
-.entry-card {
-    background: rgba(28, 38, 30, 0.65);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--glass-border);
-    border-radius: 16px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
-    position: relative;
-    overflow: hidden;
-}
-
-.entry-card.climbing {
-    border-left: 4px solid #7E8A6B;
-}
-
-.entry-card.bar {
-    border-left: 4px solid #A27035;
-}
-
-.entry-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-}
-
+/* Pigułki ról wewnątrz wpisu */
 .entry-role-pill {
     display: inline-block;
     padding: 3px 8px;
@@ -196,7 +174,7 @@ html, body, [data-testid="stAppViewContainer"] {
     display: flex;
     gap: 12px;
     font-size: 0.85rem;
-    margin: 6px 0;
+    margin: 4px 0 6px 0;
     color: #D8DFD0;
 }
 
@@ -206,21 +184,9 @@ html, body, [data-testid="stAppViewContainer"] {
     padding: 6px 10px;
     font-size: 0.82rem;
     color: #CFD7C7;
-    margin-top: 6px;
+    margin: 6px 0 8px 0;
     border-left: 2px solid rgba(143, 151, 121, 0.4);
     line-height: 1.4;
-}
-
-/* Pudełko edycji inline */
-.entry-edit-box {
-    background: rgba(22, 32, 24, 0.85);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    border: 1px solid var(--glass-border-focus);
-    border-radius: 16px;
-    padding: 1rem;
-    margin-bottom: 0.85rem;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 /* Formularze i elementy wejściowe */

@@ -22,7 +22,7 @@ def load_css():
 
 load_css()
 
-# Weryfikacja logowania
+# Weryfikacja logowania (sesja wygasa po zamknięciu karty/aplikacji)
 if not auth.is_authenticated():
     auth.render_login_screen()
     st.stop()
@@ -45,7 +45,7 @@ def format_month_label(month_key: str) -> str:
 if "editing_id" not in st.session_state:
     st.session_state["editing_id"] = None
 
-# Nagłówek
+# Nagłówek aplikacji
 status_text = "Supabase" if db.is_supabase else "Tryb lokalny"
 status_class = "status-badge" if db.is_supabase else "status-badge local"
 
@@ -80,7 +80,10 @@ tab_add, tab_stats, tab_journal = st.tabs([
 # ZAKŁADKA 1: NOWY WPIS
 # =====================================================================
 with tab_add:
-    st.markdown("<div class='glass-panel'>", unsafe_allow_html=True)
+    # Potwierdzenie zapisu wpisu
+    if st.session_state.get("entry_saved_success", False):
+        st.success("Wpis został pomyślnie zapisany.")
+        st.session_state["entry_saved_success"] = False
 
     c_date, c_role = st.columns([1, 1])
     with c_date:
@@ -141,10 +144,8 @@ with tab_add:
             bonus=bonus,
             notes=notes
         )
-        st.success("Zapisano wpis.")
+        st.session_state["entry_saved_success"] = True
         st.rerun()
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # =====================================================================
@@ -227,16 +228,14 @@ with tab_stats:
             </div>
         """, unsafe_allow_html=True)
 
-        st.markdown("<div class='glass-panel'>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size: 0.9rem; font-weight: 600; margin-bottom: 6px;'>Godziny w dniach:</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 0.9rem; font-weight: 600; margin: 12px 0 6px 0;'>Godziny w dniach:</div>", unsafe_allow_html=True)
         daily_summary = df.groupby("entry_date")["hours_worked"].sum().reset_index()
         daily_summary = daily_summary.sort_values("entry_date")
         st.bar_chart(data=daily_summary.set_index("entry_date"), color="#8F9779")
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # =====================================================================
-# ZAKŁADKA 3: DZIENNIK (EDYCJA W TYM SAMYM MIEJSCU)
+# ZAKŁADKA 3: DZIENNIK
 # =====================================================================
 with tab_journal:
     all_months = db.get_all_months()
@@ -273,7 +272,7 @@ with tab_journal:
             multi_note = f" ({len(day_items)} zmiany)" if len(day_items) > 1 else ""
 
             st.markdown(f"""
-                <div style="display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0 4px 0; border-bottom: 1px solid rgba(143, 151, 121, 0.25); padding-bottom: 3px;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0 6px 0; border-bottom: 1px solid rgba(143, 151, 121, 0.25); padding-bottom: 3px;">
                     <div>
                         <span style="font-size: 1.05rem; font-weight: 700; color: #F5F2EB;">{formatted_d}</span>
                         <span style="font-size: 0.8rem; color: #A8B29A; margin-left: 6px;">{weekday_name}{multi_note}</span>
@@ -287,106 +286,96 @@ with tab_journal:
             for entry in day_items:
                 entry_id = entry["id"]
 
-                # ==========================================
-                # TRYB EDYCJI W TYM SAMYM MIEJSCU (INLINE)
-                # ==========================================
-                if st.session_state.get("editing_id") == entry_id:
-                    st.markdown("<div class='entry-edit-box'>", unsafe_allow_html=True)
-                    st.markdown("<div style='font-size: 0.9rem; font-weight: 700; color: #F5F2EB; margin-bottom: 8px;'>Edycja wpisu</div>", unsafe_allow_html=True)
+                # Kontener wpisu: zarówno podgląd, jak i formularz edycji oraz przycisk Edytuj są wewnątrz tej samej ramki
+                with st.container(border=True):
+                    # TRYB EDYCJI W TYM SAMYM MIEJSCU
+                    if st.session_state.get("editing_id") == entry_id:
+                        st.markdown("<div style='font-size: 0.9rem; font-weight: 700; color: #F5F2EB; margin-bottom: 8px;'>Edycja wpisu</div>", unsafe_allow_html=True)
 
-                    ed_c1, ed_c2 = st.columns([1, 1])
-                    with ed_c1:
-                        try:
-                            parsed_date = datetime.strptime(entry["entry_date"], "%Y-%m-%d").date()
-                        except Exception:
-                            parsed_date = date.today()
-                        edit_date = st.date_input("Data:", value=parsed_date, key=f"edit_date_{entry_id}")
-                        
-                        is_climb = "wspinaczkowa" in entry["role_name"].lower()
-                        edit_role = st.selectbox(
-                            "Stanowisko:",
-                            options=list(DEFAULT_ROLES.keys()),
-                            index=0 if is_climb else 1,
-                            key=f"edit_role_{entry_id}"
-                        )
-                    with ed_c2:
-                        edit_hours = st.number_input(
-                            "Godziny:",
-                            min_value=0.25,
-                            max_value=24.0,
-                            value=float(entry["hours_worked"]),
-                            step=0.25,
-                            format="%.2f",
-                            key=f"edit_hours_{entry_id}"
-                        )
-                        edit_bonus = st.number_input(
-                            "Premia (zł):",
-                            min_value=0.0,
-                            value=float(entry.get("bonus", 0.0) or 0.0),
-                            step=10.0,
-                            format="%.2f",
-                            key=f"edit_bonus_{entry_id}"
-                        )
-
-                    edit_notes = st.text_area("Notatki:", value=entry.get("notes", ""), height=65, key=f"edit_notes_{entry_id}")
-
-                    # Przyciski akcji
-                    col_b_save, col_b_cancel, col_b_del = st.columns([1, 1, 1])
-                    with col_b_save:
-                        if st.button("Zapisz", key=f"save_{entry_id}", type="primary", use_container_width=True):
-                            rate = DEFAULT_ROLES.get(edit_role, float(entry.get("hourly_rate", 35.0)))
-                            db.update_entry(
-                                entry_id=entry_id,
-                                entry_date=edit_date,
-                                role_name=edit_role,
-                                hourly_rate=rate,
-                                hours_worked=edit_hours,
-                                bonus=edit_bonus,
-                                notes=edit_notes
+                        ed_c1, ed_c2 = st.columns([1, 1])
+                        with ed_c1:
+                            try:
+                                parsed_date = datetime.strptime(entry["entry_date"], "%Y-%m-%d").date()
+                            except Exception:
+                                parsed_date = date.today()
+                            edit_date = st.date_input("Data:", value=parsed_date, key=f"edit_date_{entry_id}")
+                            
+                            is_climb = "wspinaczkowa" in entry["role_name"].lower()
+                            edit_role = st.selectbox(
+                                "Stanowisko:",
+                                options=list(DEFAULT_ROLES.keys()),
+                                index=0 if is_climb else 1,
+                                key=f"edit_role_{entry_id}"
                             )
-                            st.session_state["editing_id"] = None
-                            st.rerun()
+                        with ed_c2:
+                            edit_hours = st.number_input(
+                                "Godziny:",
+                                min_value=0.25,
+                                max_value=24.0,
+                                value=float(entry["hours_worked"]),
+                                step=0.25,
+                                format="%.2f",
+                                key=f"edit_hours_{entry_id}"
+                            )
+                            edit_bonus = st.number_input(
+                                "Premia (zł):",
+                                min_value=0.0,
+                                value=float(entry.get("bonus", 0.0) or 0.0),
+                                step=10.0,
+                                format="%.2f",
+                                key=f"edit_bonus_{entry_id}"
+                            )
 
-                    with col_b_cancel:
-                        if st.button("Anuluj", key=f"cancel_{entry_id}", use_container_width=True):
-                            st.session_state["editing_id"] = None
-                            st.rerun()
+                        edit_notes = st.text_area("Notatki:", value=entry.get("notes", ""), height=65, key=f"edit_notes_{entry_id}")
 
-                    with col_b_del:
-                        if st.button("Usuń", key=f"del_{entry_id}", use_container_width=True):
-                            db.delete_entry(entry_id)
-                            st.session_state["editing_id"] = None
-                            st.rerun()
+                        col_b_save, col_b_cancel, col_b_del = st.columns([1, 1, 1])
+                        with col_b_save:
+                            if st.button("Zapisz", key=f"save_{entry_id}", type="primary", use_container_width=True):
+                                rate = DEFAULT_ROLES.get(edit_role, float(entry.get("hourly_rate", 35.0)))
+                                db.update_entry(
+                                    entry_id=entry_id,
+                                    entry_date=edit_date,
+                                    role_name=edit_role,
+                                    hourly_rate=rate,
+                                    hours_worked=edit_hours,
+                                    bonus=edit_bonus,
+                                    notes=edit_notes
+                                )
+                                st.session_state["editing_id"] = None
+                                st.rerun()
 
-                    st.markdown("</div>", unsafe_allow_html=True)
+                        with col_b_cancel:
+                            if st.button("Anuluj", key=f"cancel_{entry_id}", use_container_width=True):
+                                st.session_state["editing_id"] = None
+                                st.rerun()
 
-                # ==========================================
-                # TRYB ZWYKŁY (PODGLĄD KARTY)
-                # ==========================================
-                else:
-                    is_climbing = "wspinaczkowa" in entry["role_name"].lower()
-                    role_class = "climbing" if is_climbing else "bar"
-                    bonus_val = float(entry.get("bonus", 0.0) or 0.0)
-                    bonus_str = f" | Premia: {bonus_val:.2f} zł" if bonus_val > 0 else ""
+                        with col_b_del:
+                            if st.button("Usuń", key=f"del_{entry_id}", use_container_width=True):
+                                db.delete_entry(entry_id)
+                                st.session_state["editing_id"] = None
+                                st.rerun()
 
-                    st.markdown(f"""
-                        <div class="entry-card {role_class}">
-                            <div class="entry-header">
-                                <span class="entry-role-pill {role_class}">
-                                    {entry['role_name']}
-                                </span>
-                                <span class="entry-earned">{float(entry['total_earned']):,.2f} zł</span>
-                            </div>
-                            <div class="entry-stats">
-                                <span><b>{float(entry['hours_worked']):.2f} h</b></span>
-                                <span>{float(entry['hourly_rate']):.2f} zł/h{bonus_str}</span>
-                            </div>
-                            {f'<div class="entry-notes">{entry["notes"]}</div>' if entry.get("notes") else ''}
-                        </div>
-                    """, unsafe_allow_html=True)
+                    # TRYB ZWYKŁY (PODGLĄD KARTY Z PRZYCISKIEM EDYTUJ W ŚRODKU)
+                    else:
+                        is_climbing = "wspinaczkowa" in entry["role_name"].lower()
+                        role_class = "climbing" if is_climbing else "bar"
+                        bonus_val = float(entry.get("bonus", 0.0) or 0.0)
+                        bonus_str = f" | Premia: {bonus_val:.2f} zł" if bonus_val > 0 else ""
 
-                    c_space, c_btn = st.columns([4, 1])
-                    with c_btn:
-                        if st.button("Edytuj", key=f"edit_btn_{entry_id}", use_container_width=True):
-                            st.session_state["editing_id"] = entry_id
-                            st.rerun()
+                        col_r, col_e = st.columns([3, 1])
+                        with col_r:
+                            st.markdown(f'<span class="entry-role-pill {role_class}">{entry["role_name"]}</span>', unsafe_allow_html=True)
+                        with col_e:
+                            st.markdown(f'<div class="entry-earned" style="text-align: right;">{float(entry["total_earned"]):,.2f} zł</div>', unsafe_allow_html=True)
+
+                        st.markdown(f'<div class="entry-stats"><b>{float(entry["hours_worked"]):.2f} h</b> &nbsp;|&nbsp; {float(entry["hourly_rate"]):.2f} zł/h{bonus_str}</div>', unsafe_allow_html=True)
+
+                        if entry.get("notes"):
+                            st.markdown(f'<div class="entry-notes">{entry["notes"]}</div>', unsafe_allow_html=True)
+
+                        # Przycisk Edytuj w środku prostokąta danego dnia
+                        c_space, c_btn = st.columns([4, 1])
+                        with c_btn:
+                            if st.button("Edytuj", key=f"edit_btn_{entry_id}", use_container_width=True):
+                                st.session_state["editing_id"] = entry_id
+                                st.rerun()
