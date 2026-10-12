@@ -5,7 +5,7 @@ import streamlit as st
 
 import auth
 from db import get_db, DEFAULT_ROLES
-from ai_reporter import generate_ai_monthly_report, get_gemini_api_key
+from ai_reporter import generate_ai_monthly_report
 
 # Konfiguracja strony
 st.set_page_config(
@@ -305,19 +305,6 @@ with tab_stats:
 
         # Sekcja: Raport miesięczny AI
         st.markdown("<div style='font-size: 1.05rem; font-weight: 700; color: #F5F2EB; margin: 20px 0 8px 0;'>Raport miesięczny</div>", unsafe_allow_html=True)
-
-        existing_key = get_gemini_api_key()
-        if not existing_key:
-            with st.expander("Klucz API Gemini (opcjonalny)", expanded=False):
-                user_key = st.text_input(
-                    "Klucz API Gemini:",
-                    type="password",
-                    value=st.session_state.get("gemini_api_key", ""),
-                    placeholder="Wklej klucz z Google AI Studio...",
-                    help="Darmowy klucz można pobrać na https://aistudio.google.com/app/apikey lub dodać w .streamlit/secrets.toml"
-                )
-                if user_key:
-                    st.session_state["gemini_api_key"] = user_key.strip()
 
         col_btn_gen, col_btn_csv = st.columns([2, 1])
         with col_btn_gen:

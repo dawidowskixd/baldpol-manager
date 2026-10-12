@@ -8,7 +8,13 @@ import streamlit as st
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Kolejność modeli do sprawdzenia
-GEMINI_MODELS = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+GEMINI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash",
+]
 
 
 def get_gemini_api_key() -> str:
