@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import uuid
+import calendar
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -46,8 +47,8 @@ class DatabaseService:
                 self.is_supabase = False
                 self.client = None
 
-        if not self.is_supabase:
-            self._init_sqlite()
+        # Zawsze inicjalizujemy lokalną bazę SQLite na wypadek pracy offline lub braku połączenia
+        self._init_sqlite()
 
     def _init_sqlite(self):
         with sqlite3.connect(LOCAL_DB_FILE) as conn:
@@ -138,14 +139,20 @@ class DatabaseService:
             try:
                 query = self.client.table("work_entries").select("*")
                 if month_prefix:
-                    start_date = f"{month_prefix}-01"
-                    end_date = f"{month_prefix}-31"
-                    query = query.gte("entry_date", start_date).lte("entry_date", end_date)
+                    try:
+                        y_str, m_str = month_prefix.split("-")
+                        y, m = int(y_str), int(m_str)
+                        last_day = calendar.monthrange(y, m)[1]
+                        start_date = f"{y:04d}-{m:02d}-01"
+                        end_date = f"{y:04d}-{m:02d}-{last_day:02d}"
+                        query = query.gte("entry_date", start_date).lte("entry_date", end_date)
+                    except Exception as e_date:
+                        print(f"[Date parse warning]: {e_date}")
                 query = query.order("entry_date", desc=True).order("created_at", desc=True)
                 res = query.execute()
                 return res.data or []
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Supabase get_entries error]: {e}")
 
         with sqlite3.connect(LOCAL_DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
