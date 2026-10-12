@@ -29,6 +29,10 @@ if not auth.is_authenticated():
     st.stop()
 
 db = get_db()
+if not db.is_supabase:
+    st.error(f"Błąd połączenia z Supabase: {db.error_message}")
+    st.info("Aplikacja wymaga aktywnego połączenia z chmurą Supabase. Upewnij się, że wkleiłeś SUPABASE_URL i SUPABASE_KEY w Secrets na Streamlit Cloud.")
+    st.stop()
 
 MONTH_NAMES_PL = {
     1: "Styczeń", 2: "Luty", 3: "Marzec", 4: "Kwiecień",
@@ -130,8 +134,8 @@ if "editing_id" not in st.session_state:
     st.session_state["editing_id"] = None
 
 # Nagłówek aplikacji
-status_text = "Supabase" if db.is_supabase else "Tryb lokalny"
-status_class = "status-badge" if db.is_supabase else "status-badge local"
+status_text = "Supabase Cloud"
+status_class = "status-badge"
 
 col_head_title, col_head_act = st.columns([3, 1])
 with col_head_title:
