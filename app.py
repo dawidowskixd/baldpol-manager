@@ -5,6 +5,7 @@ import streamlit as st
 
 import auth
 from db import get_db, DEFAULT_ROLES
+from ai_reporter import generate_ai_monthly_report, get_gemini_api_key
 
 # Konfiguracja strony
 st.set_page_config(
@@ -47,7 +48,7 @@ def format_month_label(month_key: str) -> str:
         return month_key
 
 
-def generate_monthly_report(df: pd.DataFrame, selected_month: str) -> str:
+def generate_detailed_report(df: pd.DataFrame, selected_month: str) -> str:
     month_label = format_month_label(selected_month)
     total_hours = df["hours_worked"].sum()
     total_payout = df["total_earned"].sum()
@@ -302,33 +303,70 @@ with tab_stats:
         daily_summary = daily_summary.sort_values("entry_date")
         st.bar_chart(data=daily_summary.set_index("entry_date"), color="#8F9779")
 
-        # Sekcja: Raport miesięczny
-        st.markdown("<div style='font-size: 1.05rem; font-weight: 700; color: #F5F2EB; margin: 18px 0 8px 0;'>Raport z całego miesiąca</div>", unsafe_allow_html=True)
-        report_text = generate_monthly_report(df, selected_month)
+        # Sekcja: Raport miesięczny AI
+        st.markdown("<div style='font-size: 1.05rem; font-weight: 700; color: #F5F2EB; margin: 20px 0 8px 0;'>Raport miesięczny</div>", unsafe_allow_html=True)
 
-        with st.container(border=True):
-            col_dl_txt, col_dl_csv = st.columns([1, 1])
-            with col_dl_txt:
+        existing_key = get_gemini_api_key()
+        if not existing_key:
+            with st.expander("Klucz API Gemini (opcjonalny)", expanded=False):
+                user_key = st.text_input(
+                    "Klucz API Gemini:",
+                    type="password",
+                    value=st.session_state.get("gemini_api_key", ""),
+                    placeholder="Wklej klucz z Google AI Studio...",
+                    help="Darmowy klucz można pobrać na https://aistudio.google.com/app/apikey lub dodać w .streamlit/secrets.toml"
+                )
+                if user_key:
+                    st.session_state["gemini_api_key"] = user_key.strip()
+
+        col_btn_gen, col_btn_csv = st.columns([2, 1])
+        with col_btn_gen:
+            gen_clicked = st.button("Generuj raport", type="primary", use_container_width=True)
+        with col_btn_csv:
+            export_cols = [c for c in ["entry_date", "role_name", "hours_worked", "hourly_rate", "bonus", "total_earned", "notes"] if c in df.columns]
+            csv_data = df[export_cols].to_csv(index=False)
+            st.download_button(
+                label="Pobierz CSV",
+                data=csv_data,
+                file_name=f"Rozliczenie_{selected_month}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        report_session_key = f"ai_report_{selected_month}"
+        err_session_key = f"ai_report_err_{selected_month}"
+
+        if gen_clicked:
+            with st.spinner("Generowanie raportu przez AI..."):
+                month_label = format_month_label(selected_month)
+                rep_text, rep_err = generate_ai_monthly_report(df, month_label)
+                st.session_state[report_session_key] = rep_text
+                st.session_state[err_session_key] = rep_err
+
+        if report_session_key in st.session_state:
+            rep_text = st.session_state[report_session_key]
+            rep_err = st.session_state.get(err_session_key)
+
+            if rep_err:
+                st.info(rep_err)
+
+            with st.container(border=True):
+                st.markdown("<div style='font-size: 0.82rem; color: #A8B29A; margin-bottom: 6px;'>Podgląd raportu (kliknij ikonę w rogu, aby skopiować):</div>", unsafe_allow_html=True)
+                st.code(rep_text, language="text")
+
                 st.download_button(
                     label="Pobierz raport (TXT)",
-                    data=report_text,
+                    data=rep_text,
                     file_name=f"Raport_{selected_month}.txt",
                     mime="text/plain",
                     use_container_width=True
                 )
-            with col_dl_csv:
-                export_cols = [c for c in ["entry_date", "role_name", "hours_worked", "hourly_rate", "bonus", "total_earned", "notes"] if c in df.columns]
-                csv_data = df[export_cols].to_csv(index=False)
-                st.download_button(
-                    label="Pobierz dane (CSV)",
-                    data=csv_data,
-                    file_name=f"Rozliczenie_{selected_month}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+        else:
+            st.markdown("<div style='font-size: 0.85rem; color: #8F9779; margin-top: 6px;'>Kliknij <b>Generuj raport</b>, aby utworzyć podsumowanie godzin i zadań za pomocą AI.</div>", unsafe_allow_html=True)
 
-            st.markdown("<div style='font-size: 0.8rem; color: #A8B29A; margin: 8px 0 2px 0;'>Podgląd raportu (kliknij ikonę w prawym górnym rogu bloku, aby skopiować):</div>", unsafe_allow_html=True)
-            st.code(report_text, language="text")
+        with st.expander("Szczegółowy wykaz zmian (roboczy)", expanded=False):
+            detailed_text = generate_detailed_report(df, selected_month)
+            st.code(detailed_text, language="text")
 
 
 # =====================================================================
