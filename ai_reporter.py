@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Kolejność modeli do sprawdzenia
 GEMINI_MODELS = [
-    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",
     "gemini-flash-latest",
     "gemini-2.5-flash-lite",
     "gemini-2.5-pro",
@@ -184,13 +184,14 @@ ZADANIE:
 Przygotuj zwięzłą listę wypunktowaną od kropek (każdy punkt zaczyna się od znaku '• '), przedstawiającą najważniejsze rzeczy, którymi zajmował się pracownik.
 
 KRYTYCZNE ZASADY SELEKCJI:
-1. Program ma sam odrzucić mało ważne, banalne lub powtarzalne kwestie (np. rutynowa obsługa barku bez konkretów, same dyżury, ogólne słowa typu 'barek', 'praca', 'zmiana').
-2. ZACHOWAJ i zwięźle opisz tylko najważniejsze kwestie warte wspomnienia (np. prace techniczne, serwisowe, montażowe, desetting, chwytanie, monitoring, szkolenia, większe porządki, nietypowe zadania).
+1. Program ma sam odrzucić mało ważne, banalne lub powtarzalne kwestie (np. rutynowa obsługa barku bez konkretów, same dyżury, ogólne słowa typu 'barek').
+2. ZACHOWAJ i zwięźle opisz tylko najważniejsze kwestie warte wspomnienia (np. prace techniczne, serwisowe, montażowe, desetting, monitoring, szkolenia, większe porządki, nietypowe zadania).
 3. Połącz powtarzające się czynności w syntetyczne punkty (np. zamiast kilkukrotnie pisać o kanciapie, zredaguj jeden zwięzły punkt).
 4. Nie dodawaj ŻADNYCH emotikonów ani emoji.
 5. Nie dodawaj nagłówków typu 'Podsumowanie:', 'Oto lista:' ani dopisków na dole. Zwróć WYŁĄCZNIE wypunktowaną listę od znaku '• '.
-6. Jeśli pracownik nie wykonywał żadnych szczególnych prac poza standardowym dyżurem, zwróć jeden punkt:
-• Standardowa obsługa zmianowa (brak odnotowanych szczególnych prac technicznych)
+6. Nie korzystaj z profesjonalnego słownictwa, ma to być luźna informacja dla przełożonego czym pracownik zajmował sie w danym miesiącu, lista ma brzmieć naturalnie tak jakby było to pisane odręcznie.  
+7. Desettingi zawsze opisuj tylko i wyłącznie w zwięzły sposób: 'desetting'.
+8. Porządki na kanciapie opisuj w odzielnym punkcie i opisuj to tylko w prosty sposób: 'ogar kanciapy'.
 """
 
     try:

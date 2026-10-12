@@ -44,7 +44,7 @@ def render_login_screen():
     col_pad_l, col_center, col_pad_r = st.columns([1, 2, 1])
 
     with col_center:
-        # Obsługa logowania biometrycznego z komponentu HTML (wyłącznie na urządzeniach mobilnych)
+        # Obsługa Face ID (na telefonie) oraz wymuszenie wyłącznie klawiatury numerycznej (0-9)
         bio_html = f"""
         <!DOCTYPE html>
         <html>
@@ -102,13 +102,15 @@ def render_login_screen():
                 const isMobileUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
                 const screenW = window.screen ? window.screen.width : window.innerWidth;
 
-                // Na komputerze ukryj komponent całkowicie (nie wyświetlaj przycisku ani okna USB)
+                // Na komputerze ukryj przycisk Face ID
                 if (!isMobileUA || screenW > 800) {{
                     const box = document.getElementById("mobileBioBox");
                     if (box) box.style.display = "none";
                     if (window.frameElement) {{
-                        window.frameElement.style.display = "none";
                         window.frameElement.style.height = "0px";
+                        window.frameElement.style.margin = "0px";
+                        window.frameElement.style.padding = "0px";
+                        window.frameElement.style.border = "none";
                     }}
                 }}
 
@@ -116,7 +118,6 @@ def render_login_screen():
                     const status = document.getElementById("bioStatus");
                     const isHttps = window.location.protocol === "https:" || window.location.hostname === "localhost";
                     
-                    // 1. Sprawdź WebAuthn (wymaga HTTPS na telefonie)
                     if (window.PublicKeyCredential && isHttps) {{
                         try {{
                             status.innerText = "Weryfikacja Face ID...";
@@ -131,38 +132,116 @@ def render_login_screen():
                                 }}
                             }};
                             await navigator.credentials.get(getOptions);
-                            fillAndSubmitParent();
+                            focusPinInput();
                             return;
-                        }} catch (e) {{
-                            // W razie błędu fallback do pola PIN
-                        }}
+                        }} catch (e) {{}}
                     }}
                     
-                    // 2. Jeśli połączenie lokalne HTTP (192.168.1.XX):
                     status.innerText = "Dotknij pola PIN poniżej – Safari użyje Face ID z pęku kluczy.";
-                    fillAndSubmitParent();
+                    focusPinInput();
                 }}
 
-                function fillAndSubmitParent() {{
+                function focusPinInput() {{
                     try {{
                         const parentDoc = window.parent.document;
-                        const pinInput = parentDoc.querySelector('input[type="password"]');
+                        const pinInput = parentDoc.querySelector('input[type="password"], div[data-testid="stTextInput"] input');
                         if (pinInput) {{
-                            pinInput.setAttribute("autocomplete", "current-password");
                             pinInput.focus();
                         }}
                     }} catch (e) {{}}
                 }}
 
-                window.addEventListener("load", () => {{
+                // Wymuszenie czysto numerycznej klawiatury (bez liter) na telefonach i blokada znaków niebędących cyframi
+                function enforceNumericPinOnly() {{
                     try {{
                         const parentDoc = window.parent.document;
-                        const pinInput = parentDoc.querySelector('input[type="password"]');
-                        if (pinInput) {{
-                            pinInput.setAttribute("autocomplete", "current-password");
-                        }}
+                        if (!parentDoc) return;
+
+                        const inputs = parentDoc.querySelectorAll('input[type="password"], div[data-testid="stTextInput"] input');
+                        inputs.forEach(input => {{
+                            // Atrybuty wymuszające klawiaturę numeryczną (cyfry 0-9) na iOS Safari i Androidzie
+                            if (input.getAttribute("inputmode") !== "numeric") {{
+                                input.setAttribute("inputmode", "numeric");
+                            }}
+                            if (input.getAttribute("pattern") !== "[0-9]*") {{
+                                input.setAttribute("pattern", "[0-9]*");
+                            }}
+                            if (input.getAttribute("autocomplete") !== "one-time-code") {{
+                                input.setAttribute("autocomplete", "one-time-code");
+                            }}
+                            if (input.getAttribute("autocorrect") !== "off") {{
+                                input.setAttribute("autocorrect", "off");
+                            }}
+                            if (input.getAttribute("autocapitalize") !== "off") {{
+                                input.setAttribute("autocapitalize", "off");
+                            }}
+                            if (input.getAttribute("spellcheck") !== "false") {{
+                                input.setAttribute("spellcheck", "false");
+                            }}
+
+                            if (!input.dataset.numericEnforced) {{
+                                input.dataset.numericEnforced = "true";
+
+                                // 1. Blokowanie klawiszy innych niż cyfry
+                                input.addEventListener("keydown", function(e) {{
+                                    const allowed = ["Backspace", "Delete", "Tab", "Enter", "ArrowLeft", "ArrowRight", "Escape"];
+                                    if (allowed.includes(e.key)) return;
+                                    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+                                    if (!/^[0-9]$/.test(e.key)) {{
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                }}, true);
+
+                                // 2. Blokowanie zdarzenia beforeinput (kluczowe na klawiaturach mobilnych iOS / Android)
+                                input.addEventListener("beforeinput", function(e) {{
+                                    if (e.data && !/^[0-9]+$/.test(e.data)) {{
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                }}, true);
+
+                                // 3. Natychmiastowe usuwanie znaków niebędących cyframi (np. wklejenie)
+                                input.addEventListener("input", function(e) {{
+                                    const orig = this.value;
+                                    const clean = orig.replace(/[^0-9]/g, "");
+                                    if (orig !== clean) {{
+                                        this.value = clean;
+                                        this.dispatchEvent(new Event("input", {{ bubbles: true }}));
+                                    }}
+                                }}, true);
+
+                                // 4. Blokowanie wklejania liter ze schowka
+                                input.addEventListener("paste", function(e) {{
+                                    const text = (e.clipboardData || window.clipboardData).getData('text');
+                                    if (text && /[^0-9]/.test(text)) {{
+                                        e.preventDefault();
+                                        const cleanDigits = text.replace(/[^0-9]/g, "");
+                                        document.execCommand('insertText', false, cleanDigits);
+                                    }}
+                                }}, true);
+                            }}
+                        }});
                     }} catch (e) {{}}
-                }});
+                }}
+
+                // Uruchomienie natychmiastowe i cykliczne
+                enforceNumericPinOnly();
+                setInterval(enforceNumericPinOnly, 100);
+
+                // Reakcja na dotknięcie ekranu / focus
+                try {{
+                    const parentDoc = window.parent.document;
+                    if (parentDoc) {{
+                        parentDoc.addEventListener("focusin", enforceNumericPinOnly, true);
+                        parentDoc.addEventListener("touchstart", enforceNumericPinOnly, true);
+                        parentDoc.addEventListener("pointerdown", enforceNumericPinOnly, true);
+
+                        const observer = new MutationObserver(enforceNumericPinOnly);
+                        observer.observe(parentDoc.body, {{ childList: true, subtree: true, attributes: true }});
+                    }}
+                }} catch (e) {{}}
             </script>
         </body>
         </html>
@@ -176,9 +255,12 @@ def render_login_screen():
             key="text_pin_input"
         )
 
+        clean_entered_pin = "".join(filter(str.isdigit, entered_pin))
+
         if st.button("Zaloguj", use_container_width=True, type="primary"):
-            if entered_pin == expected_pin:
+            if clean_entered_pin and clean_entered_pin == expected_pin:
                 st.session_state["authenticated"] = True
                 st.rerun()
             else:
                 st.error("Nieprawidłowy kod PIN.")
+
