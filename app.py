@@ -35,12 +35,95 @@ MONTH_NAMES_PL = {
     9: "Wrzesień", 10: "Październik", 11: "Listopad", 12: "Grudzień"
 }
 
+WEEKDAY_NAMES_PL = [
+    "Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota", "Niedziela"
+]
+
 def format_month_label(month_key: str) -> str:
     try:
         y, m = month_key.split("-")
         return f"{MONTH_NAMES_PL.get(int(m), m)} {y}"
     except Exception:
         return month_key
+
+
+def generate_monthly_report(df: pd.DataFrame, selected_month: str) -> str:
+    month_label = format_month_label(selected_month)
+    total_hours = df["hours_worked"].sum()
+    total_payout = df["total_earned"].sum()
+    total_bonus = df["bonus"].sum() if "bonus" in df.columns else 0.0
+    unique_days = df["entry_date"].nunique()
+
+    climbing_mask = df["role_name"].str.contains("wspinaczkowa", case=False, na=False)
+    bar_mask = df["role_name"].str.contains("barku|recepcja", case=False, na=False)
+
+    climbing_hours = df[climbing_mask]["hours_worked"].sum()
+    climbing_earned = df[climbing_mask]["total_earned"].sum()
+
+    bar_hours = df[bar_mask]["hours_worked"].sum()
+    bar_earned = df[bar_mask]["total_earned"].sum()
+
+    lines = []
+    lines.append(f"RAPORT MIESIĘCZNY: {month_label.upper()}")
+    lines.append("=" * 48)
+    lines.append("PODSUMOWANIE:")
+    lines.append(f"• Łączna liczba godzin: {total_hours:.2f} h")
+    lines.append(f"• Liczba przepracowanych dni: {unique_days}")
+    if total_bonus > 0:
+        lines.append(f"• W tym premie: {total_bonus:.2f} zł")
+    lines.append(f"• Łączne wynagrodzenie do wypłaty: {total_payout:,.2f} zł")
+    lines.append("")
+    lines.append("ROZBICIE NA STANOWISKA:")
+    lines.append(f"• Ścianka wspinaczkowa: {climbing_hours:.2f} h | {climbing_earned:,.2f} zł")
+    lines.append(f"• Barek / Recepcja: {bar_hours:.2f} h | {bar_earned:,.2f} zł")
+    lines.append("")
+    lines.append("=" * 48)
+    lines.append("SZCZEGÓŁOWY WYKAZ PRZEPRACOWANYCH DNI I ZADAŃ:")
+    lines.append("")
+
+    df_sorted = df.sort_values(by="entry_date", ascending=True)
+    entries_by_date = {}
+    for _, row in df_sorted.iterrows():
+        d = str(row["entry_date"])
+        if d not in entries_by_date:
+            entries_by_date[d] = []
+        entries_by_date[d].append(row)
+
+    for idx, (d_str, items) in enumerate(entries_by_date.items(), start=1):
+        try:
+            d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
+            formatted_d = d_obj.strftime("%d.%m.%Y")
+            w_idx = d_obj.weekday()
+            weekday_str = WEEKDAY_NAMES_PL[w_idx] if 0 <= w_idx < len(WEEKDAY_NAMES_PL) else ""
+        except Exception:
+            formatted_d = d_str
+            weekday_str = ""
+
+        day_hours = sum(float(it["hours_worked"]) for it in items)
+        day_earned = sum(float(it["total_earned"]) for it in items)
+        multi_str = f" ({len(items)} zmiany)" if len(items) > 1 else ""
+
+        lines.append(f"{idx}. {formatted_d} ({weekday_str}){multi_str} - Razem: {day_hours:.2f} h | {day_earned:,.2f} zł")
+        for it in items:
+            role = it["role_name"]
+            h = float(it["hours_worked"])
+            rate = float(it["hourly_rate"])
+            bon = float(it.get("bonus", 0.0) or 0.0)
+            earned = float(it["total_earned"])
+            notes = str(it.get("notes", "") or "").strip()
+
+            bon_str = f" + {bon:.2f} zł premii" if bon > 0 else ""
+            lines.append(f"   - {role}: {h:.2f} h × {rate:.2f} zł/h{bon_str} = {earned:,.2f} zł")
+            if notes:
+                lines.append(f"     Co robiono: {notes}")
+            else:
+                lines.append("     Co robiono: -")
+        lines.append("")
+
+    lines.append("=" * 48)
+    lines.append("Wygenerowano z aplikacji Dziennik Pracy")
+    return "\n".join(lines)
+
 
 if "editing_id" not in st.session_state:
     st.session_state["editing_id"] = None
@@ -155,14 +238,12 @@ with tab_stats:
     all_months = db.get_all_months()
     curr_month_str = datetime.now().strftime("%Y-%m")
 
-    col_sel_month, col_exp_btn = st.columns([2, 1])
-    with col_sel_month:
-        selected_month = st.selectbox(
-            "Miesiąc:",
-            options=all_months,
-            format_func=format_month_label,
-            index=0 if curr_month_str in all_months else 0
-        )
+    selected_month = st.selectbox(
+        "Miesiąc:",
+        options=all_months,
+        format_func=format_month_label,
+        index=0 if curr_month_str in all_months else 0
+    )
 
     entries = db.get_entries(month_prefix=selected_month)
     df = pd.DataFrame(entries) if entries else pd.DataFrame()
@@ -190,18 +271,6 @@ with tab_stats:
 
         bar_hours = df[bar_mask]["hours_worked"].sum()
         bar_earned = df[bar_mask]["total_earned"].sum()
-
-        with col_exp_btn:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            export_cols = [c for c in ["entry_date", "role_name", "hours_worked", "hourly_rate", "bonus", "total_earned", "notes"] if c in df.columns]
-            csv_data = df[export_cols].to_csv(index=False)
-            st.download_button(
-                label="Pobierz CSV",
-                data=csv_data,
-                file_name=f"Rozliczenie_{selected_month}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
 
         st.markdown(f"""
             <div class="kpi-grid">
@@ -232,6 +301,34 @@ with tab_stats:
         daily_summary = df.groupby("entry_date")["hours_worked"].sum().reset_index()
         daily_summary = daily_summary.sort_values("entry_date")
         st.bar_chart(data=daily_summary.set_index("entry_date"), color="#8F9779")
+
+        # Sekcja: Raport miesięczny
+        st.markdown("<div style='font-size: 1.05rem; font-weight: 700; color: #F5F2EB; margin: 18px 0 8px 0;'>Raport z całego miesiąca</div>", unsafe_allow_html=True)
+        report_text = generate_monthly_report(df, selected_month)
+
+        with st.container(border=True):
+            col_dl_txt, col_dl_csv = st.columns([1, 1])
+            with col_dl_txt:
+                st.download_button(
+                    label="Pobierz raport (TXT)",
+                    data=report_text,
+                    file_name=f"Raport_{selected_month}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+            with col_dl_csv:
+                export_cols = [c for c in ["entry_date", "role_name", "hours_worked", "hourly_rate", "bonus", "total_earned", "notes"] if c in df.columns]
+                csv_data = df[export_cols].to_csv(index=False)
+                st.download_button(
+                    label="Pobierz dane (CSV)",
+                    data=csv_data,
+                    file_name=f"Rozliczenie_{selected_month}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+            st.markdown("<div style='font-size: 0.8rem; color: #A8B29A; margin: 8px 0 2px 0;'>Podgląd raportu (kliknij ikonę w prawym górnym rogu bloku, aby skopiować):</div>", unsafe_allow_html=True)
+            st.code(report_text, language="text")
 
 
 # =====================================================================
