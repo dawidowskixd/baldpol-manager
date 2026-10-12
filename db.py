@@ -272,6 +272,5 @@ class DatabaseService:
         return migrated, f"Zsynchronizowano {migrated} wpisów z Supabase."
 
 
-@st.cache_resource
 def get_db() -> DatabaseService:
     return DatabaseService()
