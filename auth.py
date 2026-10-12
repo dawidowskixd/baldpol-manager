@@ -44,7 +44,7 @@ def render_login_screen():
     col_pad_l, col_center, col_pad_r = st.columns([1, 2, 1])
 
     with col_center:
-        # Obsługa logowania biometrycznego z komponentu HTML (tylko na telefonie)
+        # Obsługa logowania biometrycznego z komponentu HTML (wyłącznie na urządzeniach mobilnych)
         bio_html = f"""
         <!DOCTYPE html>
         <html>
@@ -59,27 +59,21 @@ def render_login_screen():
                 }}
                 .mobile-bio-container {{
                     display: block;
-                    margin-bottom: 12px;
-                }}
-                @media (min-width: 769px) {{
-                    .mobile-bio-container {{
-                        display: none;
-                    }}
+                    margin-bottom: 10px;
                 }}
                 .faceid-btn {{
                     width: 100%;
                     background: rgba(143, 151, 121, 0.22);
                     border: 1px solid rgba(143, 151, 121, 0.45);
                     color: #EDE8DF;
-                    padding: 11px 16px;
+                    padding: 10px 14px;
                     border-radius: 12px;
-                    font-size: 14px;
+                    font-size: 13.5px;
                     font-weight: 600;
                     cursor: pointer;
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    gap: 8px;
                     box-sizing: border-box;
                     transition: all 0.2s ease;
                 }}
@@ -91,29 +85,44 @@ def render_login_screen():
                     font-size: 11px;
                     color: #A3AD8C;
                     margin-top: 5px;
+                    line-height: 1.35;
                 }}
             </style>
         </head>
         <body>
-            <div class="mobile-bio-container">
+            <div id="mobileBioBox" class="mobile-bio-container">
                 <button type="button" class="faceid-btn" onclick="handleFaceID()">
                     Zaloguj przez Face ID
                 </button>
-                <div id="bioStatus" class="bio-msg">Dotknij, aby użyć Face ID na iPhone</div>
+                <div id="bioStatus" class="bio-msg">Dotknij, aby użyć Face ID na telefonie</div>
             </div>
 
             <script>
+                // Weryfikacja czy użytkownik jest na telefonie / tablecie
+                const isMobileUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+                const screenW = window.screen ? window.screen.width : window.innerWidth;
+
+                // Na komputerze ukryj komponent całkowicie (nie wyświetlaj przycisku ani okna USB)
+                if (!isMobileUA || screenW > 800) {{
+                    const box = document.getElementById("mobileBioBox");
+                    if (box) box.style.display = "none";
+                    if (window.frameElement) {{
+                        window.frameElement.style.display = "none";
+                        window.frameElement.style.height = "0px";
+                    }}
+                }}
+
                 async function handleFaceID() {{
                     const status = document.getElementById("bioStatus");
+                    const isHttps = window.location.protocol === "https:" || window.location.hostname === "localhost";
                     
-                    // 1. Sprawdź wsparcie WebAuthn (Passkeys)
-                    if (window.PublicKeyCredential && window.isSecureContext) {{
+                    // 1. Sprawdź WebAuthn (wymaga HTTPS na telefonie)
+                    if (window.PublicKeyCredential && isHttps) {{
                         try {{
                             status.innerText = "Weryfikacja Face ID...";
                             const challenge = new Uint8Array(32);
                             window.crypto.getRandomValues(challenge);
                             
-                            // Wywołanie natywnego Face ID na iOS
                             const getOptions = {{
                                 publicKey: {{
                                     challenge: challenge,
@@ -122,15 +131,15 @@ def render_login_screen():
                                 }}
                             }};
                             await navigator.credentials.get(getOptions);
-                            // Jeśli udane, uzupełnij pole w nadrzędnym oknie
                             fillAndSubmitParent();
                             return;
                         }} catch (e) {{
-                            // Fallback do natywnego pęku kluczy iOS
+                            // W razie błędu fallback do pola PIN
                         }}
                     }}
                     
-                    // 2. Fallback na telefonie: aktywuj pole PIN w oknie rodzica, wyzwalając natywny Face ID Keychain
+                    // 2. Jeśli połączenie lokalne HTTP (192.168.1.XX):
+                    status.innerText = "Dotknij pola PIN poniżej – Safari użyje Face ID z pęku kluczy.";
                     fillAndSubmitParent();
                 }}
 
@@ -139,15 +148,12 @@ def render_login_screen():
                         const parentDoc = window.parent.document;
                         const pinInput = parentDoc.querySelector('input[type="password"]');
                         if (pinInput) {{
-                            pinInput.focus();
-                            // Dodaj autocomplete="current-password" aby Safari wywołało Face ID
                             pinInput.setAttribute("autocomplete", "current-password");
-                            pinInput.click();
+                            pinInput.focus();
                         }}
                     }} catch (e) {{}}
                 }}
 
-                // Automatycznie dodaj atrybut autocomplete="current-password" do pola PIN w Streamlit
                 window.addEventListener("load", () => {{
                     try {{
                         const parentDoc = window.parent.document;
