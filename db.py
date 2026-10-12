@@ -33,6 +33,9 @@ class DatabaseService:
         self.client = None
         self.is_supabase = False
 
+        if self.supabase_url:
+            self.supabase_url = self.supabase_url.replace("/rest/v1/", "").replace("/rest/v1", "").rstrip("/")
+
         if self.supabase_url.startswith("http") and self.supabase_key:
             try:
                 from supabase import create_client
@@ -105,8 +108,16 @@ class DatabaseService:
                 if res.data:
                     return res.data[0]
                 return data
-            except Exception:
-                pass
+            except Exception as e:
+                if "bonus" in str(e) and "bonus" in data:
+                    try:
+                        data_no_bonus = {k: v for k, v in data.items() if k != "bonus"}
+                        res = self.client.table("work_entries").insert(data_no_bonus).execute()
+                        if res.data:
+                            return res.data[0]
+                        return data
+                    except Exception:
+                        pass
 
         with sqlite3.connect(LOCAL_DB_FILE) as conn:
             cursor = conn.cursor()
@@ -182,8 +193,14 @@ class DatabaseService:
             try:
                 self.client.table("work_entries").update(update_payload).eq("id", entry_id).execute()
                 return True
-            except Exception:
-                pass
+            except Exception as e:
+                if "bonus" in str(e) and "bonus" in update_payload:
+                    try:
+                        up_no_bonus = {k: v for k, v in update_payload.items() if k != "bonus"}
+                        self.client.table("work_entries").update(up_no_bonus).eq("id", entry_id).execute()
+                        return True
+                    except Exception:
+                        pass
 
         with sqlite3.connect(LOCAL_DB_FILE) as conn:
             cursor = conn.cursor()
@@ -226,6 +243,33 @@ class DatabaseService:
         curr_month = datetime.now().strftime("%Y-%m")
         months.add(curr_month)
         return sorted(list(months), reverse=True)
+
+    def migrate_local_to_supabase(self) -> Tuple[int, str]:
+        if not (self.is_supabase and self.client):
+            return 0, "Brak połączenia z Supabase."
+        if not os.path.exists(LOCAL_DB_FILE):
+            return 0, "Brak lokalnej bazy do migracji."
+        with sqlite3.connect(LOCAL_DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM work_entries")
+            rows = [dict(r) for r in cursor.fetchall()]
+        if not rows:
+            return 0, "Brak wpisów w lokalnej bazie."
+        migrated = 0
+        for r in rows:
+            try:
+                self.client.table("work_entries").upsert(r).execute()
+                migrated += 1
+            except Exception as e:
+                if "bonus" in str(e) and "bonus" in r:
+                    try:
+                        r_no_bonus = {k: v for k, v in r.items() if k != "bonus"}
+                        self.client.table("work_entries").upsert(r_no_bonus).execute()
+                        migrated += 1
+                    except Exception:
+                        pass
+        return migrated, f"Zsynchronizowano {migrated} wpisów z Supabase."
 
 
 @st.cache_resource
