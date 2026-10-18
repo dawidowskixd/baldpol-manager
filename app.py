@@ -7,12 +7,6 @@ import auth
 from db import get_db, DEFAULT_ROLES
 from ai_reporter import generate_ai_monthly_report
 
-# Konfiguracja strony
-st.set_page_config(
-    page_title="Dziennik Pracy",
-    layout="centered",
-    initial_sidebar_state="collapsed",
-)
 
 # Załadowanie stylów CSS
 def load_css():
