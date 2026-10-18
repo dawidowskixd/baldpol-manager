@@ -7,6 +7,12 @@ import auth
 from db import get_db, DEFAULT_ROLES
 from ai_reporter import generate_ai_monthly_report
 
+# Konfiguracja strony
+st.set_page_config(
+    page_title="Godzinki",
+    layout="centered",
+    initial_sidebar_state="collapsed",
+)
 
 # Załadowanie stylów CSS
 def load_css():
@@ -120,7 +126,7 @@ def generate_detailed_report(df: pd.DataFrame, selected_month: str) -> str:
         lines.append("")
 
     lines.append("=" * 48)
-    lines.append("Wygenerowano z aplikacji Dziennik Pracy")
+    lines.append("Wygenerowano z aplikacji")
     return "\n".join(lines)
 
 
@@ -132,18 +138,6 @@ status_text = "Supabase Cloud"
 status_class = "status-badge"
 
 col_head_title, col_head_act = st.columns([3, 1])
-with col_head_title:
-    st.markdown(f"""
-        <div class="app-header">
-            <div>
-                <h1 class="app-title">Dziennik Pracy</h1>
-                <p class="app-subtitle">Rozliczenie godzin</p>
-            </div>
-            <div>
-                <span class="{status_class}">{status_text}</span>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
 
 with col_head_act:
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
