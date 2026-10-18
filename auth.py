@@ -32,14 +32,6 @@ def render_login_screen():
     if st.session_state.get("authenticated", False):
         return
 
-    st.markdown("""
-        <div class="login-wrapper">
-            <div class="login-glass-card">
-                <h1 class="login-title">Dziennik Pracy</h1>
-                <p class="login-subtitle">Wprowadź kod PIN</p>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
 
     col_pad_l, col_center, col_pad_r = st.columns([1, 2, 1])
 
