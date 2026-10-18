@@ -1,10 +1,10 @@
 import os
-from datetime import datetime, date
+from datetime import datetime, date, time, timedelta
 import pandas as pd
 import streamlit as st
 
 import auth
-from db import get_db, DEFAULT_ROLES
+from db import get_db, DEFAULT_ROLES, FIXED_MONTHLY_BONUS
 from ai_reporter import generate_ai_monthly_report
 
 # Konfiguracja strony
@@ -52,11 +52,24 @@ def format_month_label(month_key: str) -> str:
         return month_key
 
 
+def calculate_hours_from_range(start_t: time, end_t: time) -> float:
+    if end_t > start_t:
+        d1 = datetime.combine(date.min, start_t)
+        d2 = datetime.combine(date.min, end_t)
+        return round((d2 - d1).total_seconds() / 3600.0, 2)
+    elif end_t < start_t:
+        d1 = datetime.combine(date.min, start_t)
+        d2 = datetime.combine(date.min + timedelta(days=1), end_t)
+        return round((d2 - d1).total_seconds() / 3600.0, 2)
+    return 0.0
+
+
 def generate_detailed_report(df: pd.DataFrame, selected_month: str) -> str:
     month_label = format_month_label(selected_month)
     total_hours = df["hours_worked"].sum()
-    total_payout = df["total_earned"].sum()
-    total_bonus = df["bonus"].sum() if "bonus" in df.columns else 0.0
+    hours_payout = df["total_earned"].sum()
+    fixed_bonus = FIXED_MONTHLY_BONUS if not df.empty else 0.0
+    total_payout = hours_payout + fixed_bonus
     unique_days = df["entry_date"].nunique()
 
     climbing_mask = df["role_name"].str.contains("wspinaczkowa", case=False, na=False)
@@ -74,8 +87,8 @@ def generate_detailed_report(df: pd.DataFrame, selected_month: str) -> str:
     lines.append("PODSUMOWANIE:")
     lines.append(f"• Łączna liczba godzin: {total_hours:.2f} h")
     lines.append(f"• Liczba przepracowanych dni: {unique_days}")
-    if total_bonus > 0:
-        lines.append(f"• W tym premie: {total_bonus:.2f} zł")
+    lines.append(f"• Wynagrodzenie za godziny: {hours_payout:,.2f} zł")
+    lines.append(f"• Stała premia miesięczna: {fixed_bonus:,.2f} zł")
     lines.append(f"• Łączne wynagrodzenie do wypłaty: {total_payout:,.2f} zł")
     lines.append("")
     lines.append("ROZBICIE NA STANOWISKA:")
@@ -113,12 +126,10 @@ def generate_detailed_report(df: pd.DataFrame, selected_month: str) -> str:
             role = it["role_name"]
             h = float(it["hours_worked"])
             rate = float(it["hourly_rate"])
-            bon = float(it.get("bonus", 0.0) or 0.0)
             earned = float(it["total_earned"])
             notes = str(it.get("notes", "") or "").strip()
 
-            bon_str = f" + {bon:.2f} zł premii" if bon > 0 else ""
-            lines.append(f"   - {role}: {h:.2f} h × {rate:.2f} zł/h{bon_str} = {earned:,.2f} zł")
+            lines.append(f"   - {role}: {h:.2f} h × {rate:.2f} zł/h = {earned:,.2f} zł")
             if notes:
                 lines.append(f"     Co robiono: {notes}")
             else:
@@ -176,52 +187,69 @@ with tab_add:
         </div>
     """, unsafe_allow_html=True)
 
-    c_hours, c_bonus = st.columns([1, 1])
-    with c_hours:
+    time_mode = st.radio(
+        "Sposób podania czasu:",
+        options=["Godziny od – do", "Wpisz liczbę godzin"],
+        horizontal=True
+    )
+
+    if time_mode == "Godziny od – do":
+        c_start, c_end = st.columns(2)
+        with c_start:
+            start_time = st.time_input("Od:", value=time(10, 0), step=timedelta(minutes=15))
+        with c_end:
+            end_time = st.time_input("Do:", value=time(18, 0), step=timedelta(minutes=15))
+
+        hours_worked = calculate_hours_from_range(start_time, end_time)
+
+        if hours_worked > 0:
+            st.markdown(f"""
+                <div style="font-size: 0.88rem; color: #D6DEC8; margin-top: -2px; margin-bottom: 8px;">
+                    Wyliczony czas: <b style="color: #F0CA86;">{hours_worked:.2f} h</b> &nbsp;({start_time.strftime('%H:%M')} – {end_time.strftime('%H:%M')})
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.warning("Godzina zakończenia musi różnić się od godziny rozpoczęcia.")
+    else:
         hours_worked = st.number_input(
-            "Godziny:",
+            "Liczba godzin:",
             min_value=0.25,
             max_value=24.0,
             value=8.0,
             step=0.25,
             format="%.2f"
         )
-    with c_bonus:
-        bonus = st.number_input(
-            "Premia (zł):",
-            min_value=0.0,
-            value=0.0,
-            step=10.0,
-            format="%.2f"
-        )
 
     notes = st.text_area("Notatki:", height=75)
 
-    calculated_total = round(hourly_rate * hours_worked + bonus, 2)
+    calculated_total = round(hourly_rate * hours_worked, 2)
     st.markdown(f"""
         <div class="live-calc-box">
             <div>
-                <div class="live-calc-title">{hours_worked:.2f} h × {hourly_rate:.2f} zł/h {f'+ {bonus:.2f} zł premii' if bonus > 0 else ''}</div>
+                <div class="live-calc-title">{hours_worked:.2f} h × {hourly_rate:.2f} zł/h</div>
                 <div style="font-size: 0.8rem; color: #B3BEA4;">{selected_role}</div>
             </div>
             <div style="text-align: right;">
-                <div class="live-calc-title">Razem:</div>
+                <div class="live-calc-title">Razem za wpis:</div>
                 <div class="live-calc-amount">{calculated_total:,.2f} zł</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
     if st.button("Zapisz", type="primary", use_container_width=True):
-        db.add_entry(
-            entry_date=entry_date,
-            role_name=selected_role,
-            hourly_rate=hourly_rate,
-            hours_worked=hours_worked,
-            bonus=bonus,
-            notes=notes
-        )
-        st.session_state["entry_saved_success"] = True
-        st.rerun()
+        if hours_worked <= 0:
+            st.error("Czas pracy musi być większy niż 0 godzin.")
+        else:
+            db.add_entry(
+                entry_date=entry_date,
+                role_name=selected_role,
+                hourly_rate=hourly_rate,
+                hours_worked=hours_worked,
+                bonus=0.0,
+                notes=notes
+            )
+            st.session_state["entry_saved_success"] = True
+            st.rerun()
 
 
 # =====================================================================
@@ -252,7 +280,9 @@ with tab_stats:
             df["bonus"] = df["bonus"].fillna(0.0).astype(float)
 
         total_hours = df["hours_worked"].sum()
-        total_payout = df["total_earned"].sum()
+        hours_payout = df["total_earned"].sum()
+        fixed_bonus = FIXED_MONTHLY_BONUS if not df.empty else 0.0
+        total_payout = hours_payout + fixed_bonus
         unique_days = df["entry_date"].nunique()
         avg_per_day = round(total_payout / unique_days, 2) if unique_days > 0 else 0.0
 
@@ -270,12 +300,12 @@ with tab_stats:
                 <div class="kpi-card">
                     <div class="kpi-label">Łączny Zarobek</div>
                     <div class="kpi-value" style="color: #F0CA86;">{total_payout:,.2f} zł</div>
-                    <div class="kpi-sub">{unique_days} dni pracy</div>
+                    <div class="kpi-sub">w tym {fixed_bonus:,.0f} zł stałej premii</div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-label">Łączny Czas</div>
                     <div class="kpi-value">{total_hours:.1f} h</div>
-                    <div class="kpi-sub">śr. {avg_per_day:.1f} zł / dzień</div>
+                    <div class="kpi-sub">{unique_days} dni (śr. {avg_per_day:.1f} zł/d)</div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-label">Ścianka Tech</div>
@@ -287,6 +317,13 @@ with tab_stats:
                     <div class="kpi-value" style="color: #E2C29B;">{bar_hours:.1f} h</div>
                     <div class="kpi-sub">{bar_earned:,.2f} zł</div>
                 </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+            <div style="background: rgba(143, 151, 121, 0.12); border: 1px solid rgba(143, 151, 121, 0.25); border-radius: 10px; padding: 7px 12px; margin-bottom: 14px; font-size: 0.82rem; color: #D6DEC8; display: flex; justify-content: space-between; align-items: center;">
+                <span>Godziny: <b>{hours_payout:,.2f} zł</b> &nbsp;+&nbsp; Stała premia: <b>{fixed_bonus:,.2f} zł</b></span>
+                <span style="color: #F0CA86; font-weight: 700;">Razem: {total_payout:,.2f} zł</span>
             </div>
         """, unsafe_allow_html=True)
 
@@ -302,7 +339,7 @@ with tab_stats:
         with col_btn_gen:
             gen_clicked = st.button("Generuj raport", type="primary", use_container_width=True)
         with col_btn_csv:
-            export_cols = [c for c in ["entry_date", "role_name", "hours_worked", "hourly_rate", "bonus", "total_earned", "notes"] if c in df.columns]
+            export_cols = [c for c in ["entry_date", "role_name", "hours_worked", "hourly_rate", "total_earned", "notes"] if c in df.columns]
             csv_data = df[export_cols].to_csv(index=False)
             st.download_button(
                 label="Pobierz CSV",
@@ -422,41 +459,55 @@ with tab_journal:
                                 key=f"edit_role_{entry_id}"
                             )
                         with ed_c2:
-                            edit_hours = st.number_input(
-                                "Godziny:",
-                                min_value=0.25,
-                                max_value=24.0,
-                                value=float(entry["hours_worked"]),
-                                step=0.25,
-                                format="%.2f",
-                                key=f"edit_hours_{entry_id}"
+                            edit_mode = st.radio(
+                                "Sposób podania czasu:",
+                                options=["Liczba godzin", "Godziny od – do"],
+                                horizontal=True,
+                                key=f"edit_mode_{entry_id}"
                             )
-                            edit_bonus = st.number_input(
-                                "Premia (zł):",
-                                min_value=0.0,
-                                value=float(entry.get("bonus", 0.0) or 0.0),
-                                step=10.0,
-                                format="%.2f",
-                                key=f"edit_bonus_{entry_id}"
-                            )
+                            if edit_mode == "Godziny od – do":
+                                ed_s_col, ed_e_col = st.columns(2)
+                                with ed_s_col:
+                                    ed_start = st.time_input("Od:", value=time(10, 0), step=timedelta(minutes=15), key=f"ed_start_{entry_id}")
+                                with ed_e_col:
+                                    ed_end = st.time_input("Do:", value=time(18, 0), step=timedelta(minutes=15), key=f"ed_end_{entry_id}")
+                                
+                                edit_hours = calculate_hours_from_range(ed_start, ed_end)
+                                if edit_hours > 0:
+                                    st.markdown(f"<div style='font-size: 0.85rem; color: #D6DEC8; margin-bottom: 6px;'>Wyliczony czas: <b style='color: #F0CA86;'>{edit_hours:.2f} h</b></div>", unsafe_allow_html=True)
+                                else:
+                                    st.warning("Godzina zakończenia musi różnić się od rozpoczęcia.")
+                            else:
+                                edit_hours = st.number_input(
+                                    "Liczba godzin:",
+                                    min_value=0.25,
+                                    max_value=24.0,
+                                    value=float(entry["hours_worked"]),
+                                    step=0.25,
+                                    format="%.2f",
+                                    key=f"edit_hours_{entry_id}"
+                                )
 
                         edit_notes = st.text_area("Notatki:", value=entry.get("notes", ""), height=65, key=f"edit_notes_{entry_id}")
 
                         col_b_save, col_b_cancel, col_b_del = st.columns([1, 1, 1])
                         with col_b_save:
                             if st.button("Zapisz", key=f"save_{entry_id}", type="primary", use_container_width=True):
-                                rate = DEFAULT_ROLES.get(edit_role, float(entry.get("hourly_rate", 35.0)))
-                                db.update_entry(
-                                    entry_id=entry_id,
-                                    entry_date=edit_date,
-                                    role_name=edit_role,
-                                    hourly_rate=rate,
-                                    hours_worked=edit_hours,
-                                    bonus=edit_bonus,
-                                    notes=edit_notes
-                                )
-                                st.session_state["editing_id"] = None
-                                st.rerun()
+                                if edit_hours <= 0:
+                                    st.error("Czas pracy musi być większy niż 0 godzin.")
+                                else:
+                                    rate = DEFAULT_ROLES.get(edit_role, float(entry.get("hourly_rate", 35.0)))
+                                    db.update_entry(
+                                        entry_id=entry_id,
+                                        entry_date=edit_date,
+                                        role_name=edit_role,
+                                        hourly_rate=rate,
+                                        hours_worked=edit_hours,
+                                        bonus=0.0,
+                                        notes=edit_notes
+                                    )
+                                    st.session_state["editing_id"] = None
+                                    st.rerun()
 
                         with col_b_cancel:
                             if st.button("Anuluj", key=f"cancel_{entry_id}", use_container_width=True):
@@ -473,8 +524,6 @@ with tab_journal:
                     else:
                         is_climbing = "wspinaczkowa" in entry["role_name"].lower()
                         role_class = "climbing" if is_climbing else "bar"
-                        bonus_val = float(entry.get("bonus", 0.0) or 0.0)
-                        bonus_str = f" | Premia: {bonus_val:.2f} zł" if bonus_val > 0 else ""
 
                         col_r, col_e = st.columns([3, 1])
                         with col_r:
@@ -482,7 +531,7 @@ with tab_journal:
                         with col_e:
                             st.markdown(f'<div class="entry-earned" style="text-align: right;">{float(entry["total_earned"]):,.2f} zł</div>', unsafe_allow_html=True)
 
-                        st.markdown(f'<div class="entry-stats"><b>{float(entry["hours_worked"]):.2f} h</b> &nbsp;|&nbsp; {float(entry["hourly_rate"]):.2f} zł/h{bonus_str}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="entry-stats"><b>{float(entry["hours_worked"]):.2f} h</b> &nbsp;|&nbsp; {float(entry["hourly_rate"]):.2f} zł/h</div>', unsafe_allow_html=True)
 
                         if entry.get("notes"):
                             st.markdown(f'<div class="entry-notes">{entry["notes"]}</div>', unsafe_allow_html=True)

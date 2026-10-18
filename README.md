@@ -62,5 +62,6 @@ Aplikacja działa "out of the box" w trybie lokalnym SQLite, ale w dowolnym mome
 
 - **🧗 Prace techniczne na ściance wspinaczkowej:** `35.00 zł / h`
 - **☕ Praca zmianowa na barku/recepcji:** `31.40 zł / h`
-- Możliwość wpisania stawki niestandardowej / premii przy każdym wpisie.
+- **🎁 Stała premia miesięczna:** `300.00 zł` (doliczana automatycznie w podsumowaniu miesiąca)
+- **⏰ Wyznaczanie czasu:** możliwość podania dokładnych godzin rozpoczęcia i zakończenia (np. 10:00 – 18:00) lub wpisania łącznej liczby godzin z ręki.
 - Obsługa wielu wpisów w tym samym dniu (np. 3h ścianka + 4h barek).

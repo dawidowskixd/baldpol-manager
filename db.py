@@ -14,6 +14,8 @@ DEFAULT_ROLES = {
     "Barek / Recepcja (praca zmianowa)": 31.40,
 }
 
+FIXED_MONTHLY_BONUS = 300.00
+
 
 def _get_secret(key: str, default: str = "") -> str:
     try:
